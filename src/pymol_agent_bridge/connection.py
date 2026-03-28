@@ -80,15 +80,25 @@ class PyMOLConnection:
     def connect(self, timeout=CONNECT_TIMEOUT):
         """Connect to PyMOL socket server."""
         if self.socket:
-            return True
+            if self.is_connected():
+                return True
+            self.disconnect()
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.settimeout(timeout)
             self.socket.connect((self.host, self.port))
             self.socket.settimeout(RECV_TIMEOUT)
+
+            # Protocol-level handshake so BUSY rejections surface immediately.
+            handshake_timeout = min(timeout, 2.0)
+            response = self._send_ping(handshake_timeout)
+            if response.get("status") == "error":
+                raise ConnectionError(response.get("error", "Connection rejected"))
+            if response.get("type") != "pong":
+                raise ConnectionError(f"Unexpected handshake response: {response}")
             return True
         except Exception as e:
-            self.socket = None
+            self.disconnect()
             raise ConnectionError(
                 f"Cannot connect to PyMOL on {self.host}:{self.port}: {e}"
             )
@@ -137,21 +147,32 @@ class PyMOLConnection:
             self.disconnect()
             raise ConnectionError(f"Communication error: {e}")
 
-    def ping(self, timeout=5.0):
-        """Send a ping and wait for pong. Returns True if responsive."""
+    def _send_ping(self, timeout):
+        """Send ping and return raw response payload."""
         if not self.socket:
-            return False
+            raise ConnectionError("Not connected to PyMOL")
         old_timeout = self.socket.gettimeout()
         try:
             self.socket.settimeout(timeout)
             send_message(self.socket, {"type": "ping"})
-            response = recv_message(self.socket)
-            return response.get("type") == "pong"
-        except (socket.timeout, ConnectionError, ValueError, OSError):
-            return False
+            return recv_message(self.socket)
         finally:
             if self.socket:
                 self.socket.settimeout(old_timeout)
+
+    def ping(self, timeout=5.0):
+        """Send a ping and wait for pong. Returns True if responsive."""
+        if not self.socket:
+            return False
+        try:
+            response = self._send_ping(timeout)
+            if response.get("status") == "error":
+                self.disconnect()
+                return False
+            return response.get("type") == "pong"
+        except (socket.timeout, ConnectionError, ValueError, OSError):
+            self.disconnect()
+            return False
 
     def execute(self, code):
         """Execute code, reconnecting if necessary. Returns output string or raises."""

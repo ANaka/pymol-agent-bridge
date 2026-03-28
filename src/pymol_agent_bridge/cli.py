@@ -211,38 +211,69 @@ def do_repl():
 def do_watch(args):
     """Watch a file and send it to PyMOL on change."""
     path = Path(args.file)
-    print(f"Watching {path}...")
-    last_mtime = 0
+    print(f"Watching {path}... (Ctrl-C to stop)")
+    last_mtime = None
+    waiting_for_file = False
     conn = PyMOLConnection()
     try:
         while True:
-            mtime = path.stat().st_mtime
+            try:
+                mtime = path.stat().st_mtime
+            except FileNotFoundError:
+                if not waiting_for_file:
+                    print(f"Waiting for file: {path}")
+                    waiting_for_file = True
+                last_mtime = None
+                time.sleep(0.5)
+                continue
+
+            waiting_for_file = False
             if mtime != last_mtime:
                 print("Sending change...")
                 try:
-                    conn.connect()
-                    print(conn.execute(path.read_text()))
+                    code = path.read_text()
+                    conn.connect(timeout=2.0)
+                    print(conn.execute(code))
+                except OSError as e:
+                    print(f"Error reading {path}: {e}")
                 except Exception as e:
                     print(f"Error: {e}")
-                last_mtime = mtime
+                else:
+                    last_mtime = mtime
             time.sleep(0.5)
     except KeyboardInterrupt:
         return 0
+    finally:
+        conn.disconnect()
 
 
 def do_run_code(args):
     """Send code to PyMOL for evaluation."""
+    def emit_error(message):
+        if args.json:
+            print(json.dumps({"status": "error", "error": message}))
+        else:
+            print(f"Error: {message}", file=sys.stderr)
+        return 1
+
     code = args.code
     if args.file:
-        code = Path(args.file).read_text()
+        file_path = Path(args.file)
+        try:
+            code = file_path.read_text()
+        except OSError as e:
+            return emit_error(f"Cannot read file '{file_path}': {e}")
     elif code and code.startswith("@"):
-        code = Path(code[1:]).read_text()
+        file_path = Path(code[1:])
+        try:
+            code = file_path.read_text()
+        except OSError as e:
+            return emit_error(f"Cannot read file '{file_path}': {e}")
     elif not code and not os.isatty(sys.stdin.fileno()):
         code = sys.stdin.read()
 
-    if not code:
-        print("Error: No code provided", file=sys.stderr)
-        return 1
+    if not code or not code.strip():
+        return emit_error("No code provided")
 
     conn = PyMOLConnection()
     try:
