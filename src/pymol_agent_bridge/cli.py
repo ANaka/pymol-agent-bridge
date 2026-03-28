@@ -13,7 +13,10 @@ Usage:
 import argparse
 import json
 import os
+import shlex
+import shutil
 import stat
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -55,43 +58,163 @@ def _create_wrapper_script():
     return python_path
 
 
+def _get_install_instructions():
+    """Return platform-specific PyMOL install instructions.
+
+    Returns list of (description, commands) tuples.
+    """
+    env_path = str(Path.home() / ".pymol-env")
+    has_uv = shutil.which("uv") is not None
+    has_brew = sys.platform == "darwin" and shutil.which("brew") is not None
+
+    instructions = []
+
+    # Primary: dedicated environment (already recognized by find_pymol_command)
+    if has_uv:
+        instructions.append((
+            "Install into a dedicated environment (recommended)",
+            [
+                f"uv venv {env_path}",
+                f"uv pip install -p {env_path} pymol-open-source-whl",
+            ],
+        ))
+    else:
+        pip_cmd = (
+            f"{env_path}/Scripts/pip"
+            if sys.platform == "win32"
+            else f"{env_path}/bin/pip"
+        )
+        instructions.append((
+            "Install into a dedicated environment (recommended)",
+            [f"python3 -m venv {env_path}", f"{pip_cmd} install pymol-open-source-whl"],
+        ))
+
+    # Platform alternatives
+    if has_brew:
+        instructions.append(("Install via Homebrew", ["brew install pymol"]))
+    if sys.platform == "linux":
+        instructions.append(("Install via apt", ["sudo apt install pymol"]))
+
+    return instructions
+
+
+def _print_install_instructions(instructions, file=None):
+    """Print formatted install instructions."""
+    if file is None:
+        file = sys.stdout
+    print("\nInstall options:", file=file)
+    for i, (desc, cmds) in enumerate(instructions, 1):
+        print(f"\n  {i}. {desc}:", file=file)
+        for cmd in cmds:
+            print(f"     $ {cmd}", file=file)
+    print(file=file)
+
+
+def _prompt_and_install():
+    """Offer to install PyMOL into ~/.pymol-env. Returns True on success."""
+    env_path = Path.home() / ".pymol-env"
+    has_uv = shutil.which("uv") is not None
+
+    if has_uv:
+        commands = [
+            ["uv", "venv", str(env_path)],
+            ["uv", "pip", "install", "-p", str(env_path), "pymol-open-source-whl"],
+        ]
+    else:
+        pip_path = str(
+            env_path / ("Scripts" if sys.platform == "win32" else "bin") / "pip"
+        )
+        commands = [
+            [sys.executable, "-m", "venv", str(env_path)],
+            [pip_path, "install", "pymol-open-source-whl"],
+        ]
+
+    print(f"\nThis will install PyMOL into {env_path}")
+    for cmd in commands:
+        print(f"  $ {shlex.join(cmd)}")
+
+    try:
+        answer = input("\nProceed? [Y/n] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+
+    if answer not in ("", "y", "yes"):
+        return False
+
+    print()
+    for cmd in commands:
+        print(f"$ {shlex.join(cmd)}")
+        result = subprocess.run(cmd)
+        if result.returncode != 0:
+            print(f"Install failed (exit {result.returncode}).", file=sys.stderr)
+            return False
+
+    return True
+
+
 def setup_pymol():
     """Configure PyMOL to auto-load the socket plugin."""
     plugin_path = get_plugin_path()
-    pymolrc_path = find_pymolrc_path()
-
     if not plugin_path.exists():
         print(f"Error: Plugin not found at {plugin_path}", file=sys.stderr)
         return 1
 
-    # Check if already configured
-    if is_plugin_in_pymolrc():
-        print("PyMOL already configured for pymol-agent-bridge.")
-        print(f"Plugin: {plugin_path}")
-        # Still save config (in case Python path changed)
-        save_config({"python_path": sys.executable})
-        print(f"Saved Python path: {sys.executable}")
-        _create_wrapper_script()
-        print(f"Wrapper script: {WRAPPER_PATH}")
-        return 0
-
-    # Add to .pymolrc
-    clean_plugin_path = str(plugin_path).replace("\\", "/")
-    run_command = f"\n# pymol-agent-bridge\nrun {clean_plugin_path}\n"
-
-    if pymolrc_path.exists():
-        with open(pymolrc_path, "a") as f:
-            f.write(run_command)
-        print(f"Added pymol-agent-bridge plugin to existing {pymolrc_path}")
+    # Step 1: Check for PyMOL
+    pymol_cmd = find_pymol_command()
+    if pymol_cmd:
+        print(f"PyMOL found: {' '.join(pymol_cmd)}")
     else:
-        pymolrc_path.write_text(run_command.lstrip())
-        print(f"Created {pymolrc_path} with pymol-agent-bridge plugin")
+        print("PyMOL not found.")
+        try:
+            is_tty = os.isatty(sys.stdin.fileno())
+        except (AttributeError, ValueError, OSError):
+            is_tty = False
 
-    # Save Python path
+        if is_tty:
+            if _prompt_and_install():
+                pymol_cmd = find_pymol_command()
+                if pymol_cmd:
+                    print(f"\nPyMOL installed: {' '.join(pymol_cmd)}")
+                else:
+                    print(
+                        "Install completed but PyMOL not detected.",
+                        file=sys.stderr,
+                    )
+            else:
+                _print_install_instructions(_get_install_instructions())
+        else:
+            _print_install_instructions(
+                _get_install_instructions(), file=sys.stderr
+            )
+
+    # Step 2: Configure .pymolrc
+    pymolrc_path = find_pymolrc_path()
+    if is_plugin_in_pymolrc():
+        print(f"Plugin already configured in {pymolrc_path}")
+    else:
+        clean_plugin_path = str(plugin_path).replace("\\", "/")
+        run_command = f"\n# pymol-agent-bridge\nrun {clean_plugin_path}\n"
+        if pymolrc_path.exists():
+            with open(pymolrc_path, "a") as f:
+                f.write(run_command)
+            print(f"Added plugin to {pymolrc_path}")
+        else:
+            pymolrc_path.write_text(run_command.lstrip())
+            print(f"Created {pymolrc_path} with plugin")
+
+    # Step 3: Save config + wrapper
     save_config({"python_path": sys.executable})
     _create_wrapper_script()
+    print(f"Wrapper script: {WRAPPER_PATH}")
 
-    print("\nSetup complete! The plugin will auto-load when you start PyMOL.")
+    # Summary
+    if pymol_cmd:
+        print("\nSetup complete! Run 'pymol-agent-bridge launch' to start.")
+    else:
+        print(
+            "\nBridge configured. Install PyMOL, then run 'pymol-agent-bridge launch'."
+        )
     return 0
 
 
@@ -130,6 +253,7 @@ def run_doctor():
         print(f"[OK] PyMOL found: {' '.join(pymol_cmd)}")
     else:
         print("[ERROR] PyMOL not found in PATH or common locations")
+        print("        Run 'pymol-agent-bridge setup' to install")
         all_ok = False
 
     # Check .pymolrc
