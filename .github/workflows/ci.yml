@@ -57,6 +57,6 @@ jobs:
       - name: Install bridge and test deps
         run: |
           pip install -e .
-          pip install pytest>=8.3.4
+          pip install "pytest>=8.3.4"
       - name: Run integration tests
         run: xvfb-run pytest tests/integration/ -v
