@@ -139,7 +139,10 @@ class TestSetupPymolDetection:
             return Result()
 
         monkeypatch.setattr("subprocess.run", mock_run)
-        monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None)
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/usr/bin/uv" if name == "uv" else None,
+        )
 
         result = cli.setup_pymol()
         out = capsys.readouterr().out
