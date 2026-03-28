@@ -1,16 +1,16 @@
 """
 Tests for PyMOL session management.
 
-Run with: pytest tests/test_session.py -v
+Run with: pytest tests/integration/test_session.py -v
 """
 
-import os
-import signal
 import time
 
 import pytest
 
 from pymol_agent_bridge.session import PyMOLSession
+
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
@@ -95,8 +95,7 @@ class TestRecovery:
         assert session.is_healthy()
 
         if session.process and session._we_launched:
-            pid = session.process.pid
-            os.kill(pid, signal.SIGKILL)
+            session.process.kill()
             time.sleep(1)
 
             assert not session.is_running
@@ -109,8 +108,7 @@ class TestRecovery:
         session.start(timeout=20.0)
 
         if session.process and session._we_launched:
-            pid = session.process.pid
-            os.kill(pid, signal.SIGKILL)
+            session.process.kill()
             time.sleep(1)
 
             result = session.execute("print('recovered')", auto_recover=True)
@@ -126,13 +124,20 @@ class TestConnectToExisting:
         session1.start(timeout=20.0)
 
         try:
+            # Plugin accepts a single active client; release session1's socket
+            # but keep its launched process alive.
+            assert session1.connection is not None
+            session1.connection.disconnect()
+            session1.connection = None
+
             session2 = PyMOLSession()
-            session2.start(timeout=5.0)
+            session2.start(timeout=20.0)
 
             assert session2.is_healthy()
             assert not session2._we_launched
 
             session2.stop()
+            session1.start(timeout=20.0)
             assert session1.is_healthy()
 
         finally:

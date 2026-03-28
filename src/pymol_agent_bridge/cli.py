@@ -249,6 +249,7 @@ def do_watch(args):
 
 def do_run_code(args):
     """Send code to PyMOL for evaluation."""
+
     def emit_error(message):
         if args.json:
             print(json.dumps({"status": "error", "error": message}))

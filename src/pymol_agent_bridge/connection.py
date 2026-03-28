@@ -52,7 +52,6 @@ def find_pymolrc_path() -> Path:
     return home / ".pymolrc"
 
 
-PYMOLRC_PATH = find_pymolrc_path()
 _BRIDGE_MARKERS = ("pymol_agent_bridge", "pymol-agent-bridge")
 
 
