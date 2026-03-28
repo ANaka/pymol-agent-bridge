@@ -7,23 +7,23 @@ Usage:
     pymol-agent-bridge test     # Test the connection
     pymol-agent-bridge info     # Show installation info
     pymol-agent-bridge launch   # Launch PyMOL or connect to existing instance
-    pymol-agent-bridge run-code # Send code to PyMOL for evaluation
+    pymol-agent-bridge exec     # Execute code in PyMOL
 """
 
 import argparse
+import json
 import os
 import stat
 import sys
+import time
 from pathlib import Path
 
 from pymol_agent_bridge.connection import (
-    CONFIG_FILE,
     PyMOLConnection,
-    check_pymol_installed,
     connect_or_launch,
     find_pymol_command,
+    find_pymolrc_path,
     get_config,
-    get_configured_python,
     get_plugin_path,
     is_plugin_in_pymolrc,
     save_config,
@@ -31,26 +31,35 @@ from pymol_agent_bridge.connection import (
 
 WRAPPER_DIR = Path.home() / ".pymol-agent-bridge" / "bin"
 WRAPPER_PATH = WRAPPER_DIR / "pymol-agent-bridge"
-PYMOLRC_PATH = Path.home() / ".pymolrc"
 
 
 def _create_wrapper_script():
-    """Create wrapper shell script with baked Python path."""
+    """Create wrapper script with baked Python path."""
     WRAPPER_DIR.mkdir(parents=True, exist_ok=True)
     python_path = sys.executable
-    script = f"""#!/bin/bash
-"{python_path}" -m pymol_agent_bridge.cli "$@"
-"""
-    WRAPPER_PATH.write_text(script)
-    WRAPPER_PATH.chmod(
-        WRAPPER_PATH.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
-    )
+
+    if sys.platform == "win32":
+        # Windows batch file
+        script = f'@echo off\n"{python_path}" -m pymol_agent_bridge.cli %*\n'
+        wrapper_path = WRAPPER_PATH.with_suffix(".bat")
+    else:
+        # Bash script
+        script = f'#!/bin/bash\n"{python_path}" -m pymol_agent_bridge.cli "$@"\n'
+        wrapper_path = WRAPPER_PATH
+
+    wrapper_path.write_text(script)
+    if sys.platform != "win32":
+        wrapper_path.chmod(
+            wrapper_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+        )
     return python_path
 
 
 def setup_pymol():
     """Configure PyMOL to auto-load the socket plugin."""
     plugin_path = get_plugin_path()
+    pymolrc_path = find_pymolrc_path()
+
     if not plugin_path.exists():
         print(f"Error: Plugin not found at {plugin_path}", file=sys.stderr)
         return 1
@@ -67,53 +76,28 @@ def setup_pymol():
         return 0
 
     # Add to .pymolrc
-    run_command = f"\n# pymol-agent-bridge\nrun {plugin_path}\n"
+    clean_plugin_path = str(plugin_path).replace("\\", "/")
+    run_command = f"\n# pymol-agent-bridge\nrun {clean_plugin_path}\n"
 
-    if PYMOLRC_PATH.exists():
-        with open(PYMOLRC_PATH, "a") as f:
+    if pymolrc_path.exists():
+        with open(pymolrc_path, "a") as f:
             f.write(run_command)
-        print(f"Added pymol-agent-bridge plugin to existing {PYMOLRC_PATH}")
+        print(f"Added pymol-agent-bridge plugin to existing {pymolrc_path}")
     else:
-        PYMOLRC_PATH.write_text(run_command.lstrip())
-        print(f"Created {PYMOLRC_PATH} with pymol-agent-bridge plugin")
-
-    print(f"Plugin path: {plugin_path}")
-    print("\nSetup complete! The plugin will auto-load when you start PyMOL.")
-
-    # Check if PyMOL is installed
-    if not check_pymol_installed():
-        print("\nNote: PyMOL not found in PATH.")
-        print("Install PyMOL with one of:")
-        print("  - pip install pymol-open-source-whl")
-        print("  - brew install pymol (macOS)")
-        print("  - Download from https://pymol.org")
+        pymolrc_path.write_text(run_command.lstrip())
+        print(f"Created {pymolrc_path} with pymol-agent-bridge plugin")
 
     # Save Python path
     save_config({"python_path": sys.executable})
-    print(f"Saved Python path: {sys.executable}")
-
-    # Create wrapper script
     _create_wrapper_script()
-    print(f"Wrapper script: {WRAPPER_PATH}")
 
+    print("\nSetup complete! The plugin will auto-load when you start PyMOL.")
     return 0
 
 
 def check_status():
     """Check PyMOL connection status."""
     print("Checking PyMOL status...")
-
-    configured_python = get_configured_python()
-    if configured_python:
-        print(f"Configured Python: {configured_python}")
-
-    pymol_cmd = find_pymol_command()
-    if pymol_cmd:
-        print(f"PyMOL found: {' '.join(pymol_cmd)}")
-    else:
-        print("PyMOL not found in PATH")
-        return 1
-
     conn = PyMOLConnection()
     try:
         conn.connect(timeout=2.0)
@@ -122,8 +106,46 @@ def check_status():
         return 0
     except ConnectionError:
         print("Socket connection: Not available")
-        print("  (PyMOL may not be running, or plugin not loaded)")
         return 1
+
+
+def run_doctor():
+    """Perform a system check for common issues."""
+    print("Checking system health for pymol-agent-bridge...")
+    all_ok = True
+
+    # Check OS & Python
+    print(f"[OK] OS: {sys.platform}")
+    vi = sys.version_info
+    py_ver = f"{vi.major}.{vi.minor}.{vi.micro}"
+    if sys.version_info >= (3, 10):
+        print(f"[OK] Python: {py_ver}")
+    else:
+        print(f"[ERROR] Python: {py_ver} (Requires >=3.10)")
+        all_ok = False
+
+    # Check PyMOL
+    pymol_cmd = find_pymol_command()
+    if pymol_cmd:
+        print(f"[OK] PyMOL found: {' '.join(pymol_cmd)}")
+    else:
+        print("[ERROR] PyMOL not found in PATH or common locations")
+        all_ok = False
+
+    # Check .pymolrc
+    pymolrc_path = find_pymolrc_path()
+    if pymolrc_path.exists():
+        print(f"[OK] PyMOL config found: {pymolrc_path}")
+        if is_plugin_in_pymolrc():
+            print("[OK] Bridge plugin is configured in PyMOL config")
+        else:
+            print("[WARN] Bridge plugin NOT configured in PyMOL config")
+            all_ok = False
+    else:
+        print("[WARN] PyMOL config not found")
+        all_ok = False
+
+    return 0 if all_ok else 1
 
 
 def test_connection():
@@ -131,58 +153,32 @@ def test_connection():
     conn = PyMOLConnection()
     try:
         conn.connect(timeout=2.0)
-        result = conn.execute("print('pymol-agent-bridge connection test')")
-        print("Connection test: OK")
-        print(f"Response: {result}")
+        result = conn.execute("print('bridge test')")
+        print(f"Connection test: OK. Response: {result}")
         conn.disconnect()
         return 0
-    except ConnectionError as e:
-        print(f"Connection failed: {e}", file=sys.stderr)
-        print("\nMake sure PyMOL is running with the socket plugin.")
-        print("Start PyMOL and run: bridge_status")
-        return 1
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f"Connection failed: {e}", file=sys.stderr)
         return 1
 
 
 def show_info():
     """Show pymol-agent-bridge installation info."""
-    plugin_path = get_plugin_path()
-
     print("pymol-agent-bridge installation info:")
-    print(f"  Plugin: {plugin_path}")
-    print(f"  Plugin exists: {plugin_path.exists()}")
-    print(f"  .pymolrc: {PYMOLRC_PATH}")
-    print(f"  .pymolrc exists: {PYMOLRC_PATH.exists()}")
-
-    if PYMOLRC_PATH.exists():
-        configured = is_plugin_in_pymolrc()
-        print(f"  Configured in .pymolrc: {configured}")
-    pymol_cmd = find_pymol_command()
-    print(f"  PyMOL command: {' '.join(pymol_cmd) if pymol_cmd else 'not found'}")
-
-    print(f"  Config file: {CONFIG_FILE}")
+    print(f"  Plugin: {get_plugin_path()}")
+    print(f"  .pymolrc: {find_pymolrc_path()}")
+    print(f"  Wrapper: {WRAPPER_PATH}")
     config = get_config()
     if config:
-        for key, value in config.items():
-            print(f"  Config {key}: {value}")
-    else:
-        print("  Config: not set (run 'pymol-agent-bridge setup' to configure)")
-
-    print(f"  Wrapper script: {WRAPPER_PATH}")
-    print(f"  Wrapper exists: {WRAPPER_PATH.exists()}")
+        print(f"  Config: {config}")
 
 
 def do_launch(args):
     """Launch PyMOL or connect to existing instance."""
-    file_path = getattr(args, "file", None)
-    headless = getattr(args, "headless", False)
     try:
-        conn, process = connect_or_launch(file_path=file_path, headless=headless)
+        conn, process = connect_or_launch(file_path=args.file, headless=args.headless)
         if process:
-            mode = " (headless)" if headless else ""
-            print(f"Launched PyMOL{mode} (pid {process.pid})")
+            print(f"Launched PyMOL (pid {process.pid})")
         else:
             print("Connected to existing PyMOL instance")
         conn.disconnect()
@@ -192,116 +188,152 @@ def do_launch(args):
         return 1
 
 
+def do_repl():
+    """Start an interactive PyMOL shell."""
+    print("PyMOL Bridge Interactive Shell. Type 'exit' to quit.")
+    conn = PyMOLConnection()
+    try:
+        conn.connect(timeout=2.0)
+        while True:
+            line = input("pymol> ")
+            if line.lower() in ("exit", "quit"):
+                break
+            if not line.strip():
+                continue
+            print(conn.execute(line))
+    except (EOFError, KeyboardInterrupt):
+        print()
+    except Exception as e:
+        print(f"Error: {e}")
+    return 0
+
+
+def do_watch(args):
+    """Watch a file and send it to PyMOL on change."""
+    path = Path(args.file)
+    print(f"Watching {path}... (Ctrl-C to stop)")
+    last_mtime = None
+    waiting_for_file = False
+    conn = PyMOLConnection()
+    try:
+        while True:
+            try:
+                mtime = path.stat().st_mtime
+            except FileNotFoundError:
+                if not waiting_for_file:
+                    print(f"Waiting for file: {path}")
+                    waiting_for_file = True
+                last_mtime = None
+                time.sleep(0.5)
+                continue
+
+            waiting_for_file = False
+            if mtime != last_mtime:
+                print("Sending change...")
+                try:
+                    code = path.read_text()
+                    conn.connect(timeout=2.0)
+                    print(conn.execute(code))
+                except OSError as e:
+                    print(f"Error reading {path}: {e}")
+                except Exception as e:
+                    print(f"Error: {e}")
+                else:
+                    last_mtime = mtime
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        return 0
+    finally:
+        conn.disconnect()
+
+
 def do_run_code(args):
     """Send code to PyMOL for evaluation."""
-    code = getattr(args, "code", None)
+    def emit_error(message):
+        if args.json:
+            print(json.dumps({"status": "error", "error": message}))
+        else:
+            print(f"Error: {message}", file=sys.stderr)
+        return 1
 
-    if code:
-        code = code
-    elif not os.isatty(sys.stdin.fileno()):
+    code = args.code
+    if args.file:
+        file_path = Path(args.file)
+        try:
+            code = file_path.read_text()
+        except OSError as e:
+            return emit_error(f"Cannot read file '{file_path}': {e}")
+    elif code and code.startswith("@"):
+        file_path = Path(code[1:])
+        try:
+            code = file_path.read_text()
+        except OSError as e:
+            return emit_error(f"Cannot read file '{file_path}': {e}")
+    elif not code and not os.isatty(sys.stdin.fileno()):
         code = sys.stdin.read()
-    else:
-        print(
-            "Error: No code provided. Pass as argument or pipe via stdin.",
-            file=sys.stderr,
-        )
-        print(
-            "  pymol-agent-bridge run-code \"cmd.fetch('1ubq')\"", file=sys.stderr
-        )
-        print(
-            "  echo \"cmd.fetch('1ubq')\" | pymol-agent-bridge run-code",
-            file=sys.stderr,
-        )
-        return 1
 
-    if not code.strip():
-        print("Error: Empty code.", file=sys.stderr)
-        return 1
+    if not code or not code.strip():
+        return emit_error("No code provided")
 
     conn = PyMOLConnection()
     try:
         conn.connect(timeout=2.0)
-    except ConnectionError:
-        print("Error: Cannot connect to PyMOL. Is it running?", file=sys.stderr)
-        print("  Run: pymol-agent-bridge launch", file=sys.stderr)
-        return 1
-
-    try:
         result = conn.execute(code)
-        if result:
-            print(result, end="" if result.endswith("\n") else "\n")
-        conn.disconnect()
+        if args.json:
+            print(json.dumps({"status": "success", "output": result}))
+        else:
+            print(result)
         return 0
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        conn.disconnect()
+        if args.json:
+            print(json.dumps({"status": "error", "error": str(e)}))
+        else:
+            print(f"Error: {e}", file=sys.stderr)
         return 1
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="pymol-agent-bridge: Lightweight bridge connecting agents to PyMOL",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-
+    parser = argparse.ArgumentParser(description="pymol-agent-bridge")
     subparsers = parser.add_subparsers(dest="command")
 
-    subparsers.add_parser(
-        "setup", help="Configure PyMOL to auto-load the socket plugin"
-    )
-    subparsers.add_parser("status", help="Check if PyMOL is running and connected")
-    subparsers.add_parser("test", help="Test the connection with a simple command")
-    subparsers.add_parser("info", help="Show installation info")
+    subparsers.add_parser("setup")
+    subparsers.add_parser("status")
+    subparsers.add_parser("doctor")
+    subparsers.add_parser("test")
+    subparsers.add_parser("info")
+    subparsers.add_parser("repl")
 
-    launch_parser = subparsers.add_parser(
-        "launch", help="Launch PyMOL or connect to existing instance"
-    )
-    launch_parser.add_argument(
-        "file", nargs="?", default=None, help="File to open (e.g., .pdb, .cif)"
-    )
-    launch_parser.add_argument(
-        "--headless",
-        action="store_true",
-        help="Launch PyMOL in command-line mode (no GUI)",
-    )
+    l_p = subparsers.add_parser("launch")
+    l_p.add_argument("file", nargs="?")
+    l_p.add_argument("--headless", action="store_true")
 
-    run_code_parser = subparsers.add_parser(
-        "run-code", help="Send code to PyMOL for evaluation"
-    )
-    run_code_parser.add_argument(
-        "code",
-        nargs="?",
-        default=None,
-        help="Python code to send (or pipe via stdin)",
-    )
+    w_p = subparsers.add_parser("watch")
+    w_p.add_argument("file")
 
-    # "exec" is an alias for "run-code"
-    exec_parser = subparsers.add_parser("exec", help="Alias for run-code")
-    exec_parser.add_argument(
-        "code",
-        nargs="?",
-        default=None,
-        help="Python code to send (or pipe via stdin)",
-    )
+    for cmd in ["exec", "run-code"]:
+        e_p = subparsers.add_parser(cmd)
+        e_p.add_argument("code", nargs="?")
+        e_p.add_argument("-f", "--file")
+        e_p.add_argument("--json", action="store_true")
 
     args = parser.parse_args()
+    if not args.command:
+        show_info()
+        return 0
 
-    if args.command is None:
-        show_info()
-        return 0
-    elif args.command == "setup":
-        return setup_pymol()
-    elif args.command == "status":
-        return check_status()
-    elif args.command == "test":
-        return test_connection()
-    elif args.command == "info":
-        show_info()
-        return 0
-    elif args.command == "launch":
-        return do_launch(args)
-    elif args.command in ("run-code", "exec"):
-        return do_run_code(args)
+    cmds = {
+        "setup": setup_pymol,
+        "status": check_status,
+        "doctor": run_doctor,
+        "test": test_connection,
+        "info": show_info,
+        "repl": do_repl,
+        "watch": lambda: do_watch(args),
+        "launch": lambda: do_launch(args),
+        "exec": lambda: do_run_code(args),
+        "run-code": lambda: do_run_code(args),
+    }
+    return cmds[args.command]()
 
 
 if __name__ == "__main__":
