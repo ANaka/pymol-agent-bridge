@@ -74,8 +74,7 @@ The plugin registers these commands inside PyMOL's terminal:
 
 This bridge is agent-agnostic. If your agent can run shell commands, it can control PyMOL:
 
-- **Claude Code** -- use with [claudemol](https://github.com/ANaka/claudemol) skills for structural biology workflows
-- **Cursor, Copilot, etc.** -- point at `~/.pymol-agent-bridge/bin/pymol-agent-bridge exec` in your instructions
+- **Claude Code, Cursor, Copilot, etc.** -- configure your agent to run `~/.pymol-agent-bridge/bin/pymol-agent-bridge exec`
 - **Shell scripts** -- automate batch rendering, analysis pipelines, CI jobs
 
 ## Development
