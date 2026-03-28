@@ -78,17 +78,6 @@ This bridge is agent-agnostic. If your agent can run shell commands, it can cont
 - **Cursor, Copilot, etc.** -- point at `~/.pymol-agent-bridge/bin/pymol-agent-bridge exec` in your instructions
 - **Shell scripts** -- automate batch rendering, analysis pipelines, CI jobs
 
-## Migrating from claudemol
-
-If you previously used the `claudemol` pip package:
-
-```bash
-pip install pymol-agent-bridge
-pymol-agent-bridge setup  # Detects and replaces old claudemol entries in ~/.pymolrc
-```
-
-The `setup` command will automatically remove legacy claudemol entries from your `~/.pymolrc` and configure the new bridge plugin.
-
 ## Development
 
 ```bash

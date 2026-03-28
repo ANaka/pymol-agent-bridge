@@ -36,9 +36,6 @@ PYMOL_PATHS = [
 
 PYMOLRC_PATH = Path.home() / ".pymolrc"
 _BRIDGE_MARKERS = ("pymol_agent_bridge", "pymol-agent-bridge")
-_LEGACY_MARKERS = ("claudemol", "claude_socket_plugin")
-
-
 def is_plugin_in_pymolrc() -> bool:
     """Check if the bridge plugin is already configured in ~/.pymolrc."""
     if not PYMOLRC_PATH.exists():
@@ -46,36 +43,6 @@ def is_plugin_in_pymolrc() -> bool:
     try:
         content = PYMOLRC_PATH.read_text()
         return any(marker in content for marker in _BRIDGE_MARKERS)
-    except OSError:
-        return False
-
-
-def has_legacy_pymolrc_entry() -> bool:
-    """Check if ~/.pymolrc has claudemol entries that should be replaced."""
-    if not PYMOLRC_PATH.exists():
-        return False
-    try:
-        content = PYMOLRC_PATH.read_text()
-        return any(marker in content for marker in _LEGACY_MARKERS)
-    except OSError:
-        return False
-
-
-def remove_legacy_pymolrc_entries() -> bool:
-    """Remove claudemol entries from ~/.pymolrc. Returns True if changes were made."""
-    if not PYMOLRC_PATH.exists():
-        return False
-    try:
-        lines = PYMOLRC_PATH.read_text().splitlines(keepends=True)
-        filtered = [
-            line
-            for line in lines
-            if not any(marker in line for marker in _LEGACY_MARKERS)
-        ]
-        if len(filtered) != len(lines):
-            PYMOLRC_PATH.write_text("".join(filtered))
-            return True
-        return False
     except OSError:
         return False
 

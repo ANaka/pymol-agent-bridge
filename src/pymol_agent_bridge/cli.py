@@ -25,9 +25,7 @@ from pymol_agent_bridge.connection import (
     get_config,
     get_configured_python,
     get_plugin_path,
-    has_legacy_pymolrc_entry,
     is_plugin_in_pymolrc,
-    remove_legacy_pymolrc_entries,
     save_config,
 )
 
@@ -56,11 +54,6 @@ def setup_pymol():
     if not plugin_path.exists():
         print(f"Error: Plugin not found at {plugin_path}", file=sys.stderr)
         return 1
-
-    # Handle legacy claudemol entries
-    if has_legacy_pymolrc_entry():
-        print("Found legacy claudemol entries in .pymolrc, replacing...")
-        remove_legacy_pymolrc_entries()
 
     # Check if already configured
     if is_plugin_in_pymolrc():
@@ -166,9 +159,6 @@ def show_info():
     if PYMOLRC_PATH.exists():
         configured = is_plugin_in_pymolrc()
         print(f"  Configured in .pymolrc: {configured}")
-        if has_legacy_pymolrc_entry():
-            print("  Warning: legacy claudemol entries found (run setup to replace)")
-
     pymol_cmd = find_pymol_command()
     print(f"  PyMOL command: {' '.join(pymol_cmd) if pymol_cmd else 'not found'}")
 
