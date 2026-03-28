@@ -71,23 +71,30 @@ def _get_install_instructions():
 
     # Primary: dedicated environment (already recognized by find_pymol_command)
     if has_uv:
-        instructions.append((
-            "Install into a dedicated environment (recommended)",
-            [
-                f"uv venv {env_path}",
-                f"uv pip install -p {env_path} pymol-open-source-whl",
-            ],
-        ))
+        instructions.append(
+            (
+                "Install into a dedicated environment (recommended)",
+                [
+                    f"uv venv {env_path}",
+                    f"uv pip install -p {env_path} pymol-open-source-whl",
+                ],
+            )
+        )
     else:
         pip_cmd = (
             f"{env_path}/Scripts/pip"
             if sys.platform == "win32"
             else f"{env_path}/bin/pip"
         )
-        instructions.append((
-            "Install into a dedicated environment (recommended)",
-            [f"python3 -m venv {env_path}", f"{pip_cmd} install pymol-open-source-whl"],
-        ))
+        instructions.append(
+            (
+                "Install into a dedicated environment (recommended)",
+                [
+                    f"python3 -m venv {env_path}",
+                    f"{pip_cmd} install pymol-open-source-whl",
+                ],
+            )
+        )
 
     # Platform alternatives
     if has_brew:
@@ -184,9 +191,7 @@ def setup_pymol():
             else:
                 _print_install_instructions(_get_install_instructions())
         else:
-            _print_install_instructions(
-                _get_install_instructions(), file=sys.stderr
-            )
+            _print_install_instructions(_get_install_instructions(), file=sys.stderr)
 
     # Step 2: Configure .pymolrc
     pymolrc_path = find_pymolrc_path()
