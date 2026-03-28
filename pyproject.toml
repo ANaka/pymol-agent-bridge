@@ -28,5 +28,9 @@ select = ["E", "F", "I"]
 [tool.pyright]
 include = ["src"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: requires a running PyMOL instance"]
+
 [dependency-groups]
 dev = ["pyright>=1.1.400", "pytest>=8.3.4", "ruff>=0.9.7"]

@@ -1,16 +1,16 @@
 """
 Tests for PyMOL session management.
 
-Run with: pytest tests/test_session.py -v
+Run with: pytest tests/integration/test_session.py -v
 """
 
-import os
-import signal
 import time
 
 import pytest
 
 from pymol_agent_bridge.session import PyMOLSession
+
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
@@ -95,8 +95,7 @@ class TestRecovery:
         assert session.is_healthy()
 
         if session.process and session._we_launched:
-            pid = session.process.pid
-            os.kill(pid, signal.SIGKILL)
+            session.process.kill()
             time.sleep(1)
 
             assert not session.is_running
@@ -109,8 +108,7 @@ class TestRecovery:
         session.start(timeout=20.0)
 
         if session.process and session._we_launched:
-            pid = session.process.pid
-            os.kill(pid, signal.SIGKILL)
+            session.process.kill()
             time.sleep(1)
 
             result = session.execute("print('recovered')", auto_recover=True)
