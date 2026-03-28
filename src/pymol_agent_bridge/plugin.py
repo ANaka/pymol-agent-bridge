@@ -14,11 +14,53 @@ Usage:
 import io
 import json
 import socket
+import struct
 import threading
 import traceback
 from contextlib import redirect_stdout
 
 from pymol import cmd
+
+# --- Inline protocol (plugin must be self-contained for `run` loading) ---
+
+_MAX_FRAME_SIZE = 10 * 1024 * 1024  # 10 MB
+_HEADER_SIZE = 4
+
+
+def _send_message(sock, message):
+    data = json.dumps(message).encode("utf-8")
+    if len(data) > _MAX_FRAME_SIZE:
+        raise ValueError(f"Message too large: {len(data)} bytes")
+    sock.sendall(struct.pack("!I", len(data)) + data)
+
+
+def _recv_message(sock):
+    header = _recv_exact(sock, _HEADER_SIZE)
+    (length,) = struct.unpack("!I", header)
+    if length > _MAX_FRAME_SIZE:
+        raise ValueError(f"Frame too large: {length} bytes")
+    if length == 0:
+        raise ValueError("Empty frame")
+    data = _recv_exact(sock, length)
+    return json.loads(data.decode("utf-8"))
+
+
+def _recv_exact(sock, n):
+    buf = bytearray()
+    while len(buf) < n:
+        try:
+            chunk = sock.recv(n - len(buf))
+            if not chunk:
+                raise ConnectionError("Connection closed by peer")
+            buf.extend(chunk)
+        except socket.timeout:
+            if not buf:
+                raise  # nothing received yet - let caller decide
+            continue  # mid-message - keep reading
+    return bytes(buf)
+
+
+# --- Server ---
 
 # Global state
 _server = None
@@ -30,9 +72,10 @@ class SocketServer:
         self.host = host
         self.port = port
         self.socket = None
-        self.client = None
         self.running = False
         self.thread = None
+        self._client_lock = threading.Lock()
+        self._active_client = None
 
     def start(self):
         if self.running:
@@ -47,7 +90,7 @@ class SocketServer:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.socket.bind((self.host, self.port))
-            self.socket.listen(5)
+            self.socket.listen(1)
             self.socket.settimeout(1.0)
 
             print(f"Agent bridge listener active on port {self.port}")
@@ -55,14 +98,27 @@ class SocketServer:
             while self.running:
                 try:
                     new_client, address = self.socket.accept()
-                    if self.client:
-                        try:
-                            self.client.close()
-                        except Exception:
-                            pass
-                    self.client = new_client
-                    self.client.settimeout(1.0)
-                    self._handle_client(address)
+                    with self._client_lock:
+                        if self._active_client is not None:
+                            try:
+                                _send_message(
+                                    new_client,
+                                    {
+                                        "status": "error",
+                                        "error": "Server busy",
+                                    },
+                                )
+                            except Exception:
+                                pass
+                            new_client.close()
+                            continue
+                        self._active_client = new_client
+                    handler = threading.Thread(
+                        target=self._handle_client,
+                        args=(new_client, address),
+                        daemon=True,
+                    )
+                    handler.start()
                 except socket.timeout:
                     continue
                 except Exception as e:
@@ -74,34 +130,33 @@ class SocketServer:
         finally:
             self._cleanup()
 
-    def _handle_client(self, address):
-        buffer = b""
-        while self.running and self.client:
-            try:
-                data = self.client.recv(4096)
-                if not data:
-                    break
-                buffer += data
+    def _handle_client(self, client, address):
+        client.settimeout(5.0)
+        try:
+            while self.running:
                 try:
-                    command = json.loads(buffer.decode("utf-8"))
-                    buffer = b""
-                    result = self._execute_command(command)
-                    response = json.dumps(result)
-                    self.client.sendall(response.encode("utf-8"))
-                except json.JSONDecodeError:
+                    message = _recv_message(client)
+                    if message.get("type") == "ping":
+                        _send_message(client, {"status": "success", "type": "pong"})
+                        continue
+                    result = self._execute_command(message)
+                    _send_message(client, result)
+                except socket.timeout:
                     continue
-            except socket.timeout:
-                continue
-            except Exception as e:
-                if self.running:
-                    print(f"Client error: {e}")
-                break
-        if self.client:
+                except (ConnectionError, ValueError):
+                    break
+                except Exception as e:
+                    if self.running:
+                        print(f"Client error: {e}")
+                    break
+        finally:
             try:
-                self.client.close()
+                client.close()
             except Exception:
                 pass
-            self.client = None
+            with self._client_lock:
+                if self._active_client is client:
+                    self._active_client = None
 
     def _execute_command(self, command):
         code = command.get("code", "")
@@ -111,7 +166,7 @@ class SocketServer:
             exec_globals = {"cmd": cmd, "__builtins__": __builtins__}
             output_buffer = io.StringIO()
             with redirect_stdout(output_buffer):
-                exec(code, exec_globals)
+                exec(code, exec_globals)  # noqa: S102 — intentional; this is the bridge's core mechanism
             output = output_buffer.getvalue()
             if "_result" in exec_globals:
                 output = str(exec_globals["_result"])
@@ -120,18 +175,19 @@ class SocketServer:
             return {"status": "error", "error": str(e)}
 
     def _cleanup(self):
-        if self.client:
-            try:
-                self.client.close()
-            except Exception:
-                pass
+        with self._client_lock:
+            if self._active_client:
+                try:
+                    self._active_client.close()
+                except Exception:
+                    pass
+                self._active_client = None
         if self.socket:
             try:
                 self.socket.close()
             except Exception:
                 pass
         self.socket = None
-        self.client = None
         self.running = False
 
     def stop(self):
@@ -149,7 +205,8 @@ def bridge_status():
     """Print agent bridge listener status."""
     global _server
     if _server and _server.is_running:
-        connected = "connected" if _server.client else "waiting"
+        with _server._client_lock:
+            connected = "connected" if _server._active_client else "waiting"
         print(f"Agent bridge listener: running on port {_port} ({connected})")
     else:
         print("Agent bridge listener: not running")

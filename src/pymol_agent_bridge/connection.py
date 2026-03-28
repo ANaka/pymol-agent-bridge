@@ -12,6 +12,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from pymol_agent_bridge.protocol import recv_message, send_message
+
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 9880
 CONNECT_TIMEOUT = 5.0
@@ -30,18 +32,37 @@ PYMOL_PATHS = [
     # Linux system locations
     "/usr/bin/pymol",
     "/usr/local/bin/pymol",
+    # Windows common locations
+    os.path.expandvars(r"%PROGRAMFILES%\PyMOL\PyMOL\PyMOLWin.exe"),
+    os.path.expandvars(r"%LOCALAPPDATA%\Schrodinger\PyMOL\PyMOLWin.exe"),
 ]
 
 # --- pymolrc detection (centralized) ---
 
-PYMOLRC_PATH = Path.home() / ".pymolrc"
+
+def find_pymolrc_path() -> Path:
+    """Find the PyMOL configuration file path (.pymolrc or pymolrc.py)."""
+    home = Path.home()
+    # Check common locations
+    for name in [".pymolrc", "pymolrc.py", ".pymolrc.py"]:
+        p = home / name
+        if p.exists():
+            return p
+    # Default to .pymolrc
+    return home / ".pymolrc"
+
+
+PYMOLRC_PATH = find_pymolrc_path()
 _BRIDGE_MARKERS = ("pymol_agent_bridge", "pymol-agent-bridge")
+
+
 def is_plugin_in_pymolrc() -> bool:
     """Check if the bridge plugin is already configured in ~/.pymolrc."""
-    if not PYMOLRC_PATH.exists():
+    path = find_pymolrc_path()
+    if not path.exists():
         return False
     try:
-        content = PYMOLRC_PATH.read_text()
+        content = path.read_text()
         return any(marker in content for marker in _BRIDGE_MARKERS)
     except OSError:
         return False
@@ -95,8 +116,9 @@ class PyMOLConnection:
             except BlockingIOError:
                 pass
             finally:
-                self.socket.setblocking(True)
-                self.socket.settimeout(RECV_TIMEOUT)
+                if self.socket:
+                    self.socket.setblocking(True)
+                    self.socket.settimeout(RECV_TIMEOUT)
             return True
         except OSError:
             self.disconnect()
@@ -107,24 +129,29 @@ class PyMOLConnection:
         if not self.socket:
             raise ConnectionError("Not connected to PyMOL")
         try:
-            message = json.dumps({"type": "execute", "code": code})
-            self.socket.sendall(message.encode("utf-8"))
-            response = b""
-            while True:
-                chunk = self.socket.recv(4096)
-                if not chunk:
-                    raise ConnectionError("Connection closed by PyMOL")
-                response += chunk
-                try:
-                    result = json.loads(response.decode("utf-8"))
-                    return result
-                except json.JSONDecodeError:
-                    continue
+            send_message(self.socket, {"type": "execute", "code": code})
+            return recv_message(self.socket)
         except socket.timeout:
             raise TimeoutError("PyMOL command timed out")
-        except Exception as e:
+        except (ConnectionError, ValueError) as e:
             self.disconnect()
             raise ConnectionError(f"Communication error: {e}")
+
+    def ping(self, timeout=5.0):
+        """Send a ping and wait for pong. Returns True if responsive."""
+        if not self.socket:
+            return False
+        old_timeout = self.socket.gettimeout()
+        try:
+            self.socket.settimeout(timeout)
+            send_message(self.socket, {"type": "ping"})
+            response = recv_message(self.socket)
+            return response.get("type") == "pong"
+        except (socket.timeout, ConnectionError, ValueError, OSError):
+            return False
+        finally:
+            if self.socket:
+                self.socket.settimeout(old_timeout)
 
     def execute(self, code):
         """Execute code, reconnecting if necessary. Returns output string or raises."""
@@ -137,7 +164,7 @@ class PyMOLConnection:
                     return result.get("output", "")
                 else:
                     raise RuntimeError(result.get("error", "Unknown error"))
-            except ConnectionError:
+            except (ConnectionError, TimeoutError):
                 if attempt < 2:
                     time.sleep(0.5)
                     continue
@@ -263,11 +290,11 @@ def launch_pymol(
             # Check if process died during startup
             if process.poll() is not None:
                 if capture_output:
-                    stdout, stderr = process.communicate(timeout=1)
+                    raw_out, raw_err = process.communicate(timeout=1)
+                    out = raw_out.decode() if isinstance(raw_out, bytes) else raw_out
+                    err = raw_err.decode() if isinstance(raw_err, bytes) else raw_err
                     raise RuntimeError(
-                        f"PyMOL exited during startup.\n"
-                        f"stdout: {stdout.decode()}\n"
-                        f"stderr: {stderr.decode()}"
+                        f"PyMOL exited during startup.\nstdout: {out}\nstderr: {err}"
                     )
                 raise RuntimeError("PyMOL exited during startup.")
 

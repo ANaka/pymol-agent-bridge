@@ -8,8 +8,6 @@ Provides reliable session lifecycle management:
 - Crash detection and recovery
 """
 
-import os
-import signal
 import subprocess
 import time
 
@@ -62,21 +60,23 @@ class PyMOLSession:
 
     def is_healthy(self):
         """
-        Check if PyMOL is responsive by executing a trivial command.
+        Check if PyMOL is responsive via protocol-level ping.
 
         Returns True if we can communicate with PyMOL.
         """
-        if not self.is_connected:
+        if not self.is_connected or self.connection is None:
             return False
         try:
-            result = self.connection.execute("print('ping')")
-            return "ping" in result
+            return self.connection.ping()
         except Exception:
             return False
 
     def start(self, timeout=15.0, headless=False):
         """
         Start PyMOL or connect to existing instance.
+
+        No-op when already connected and healthy, preserving ownership
+        semantics so ``stop()`` only kills processes this session launched.
 
         Args:
             timeout: How long to wait for PyMOL to be ready
@@ -86,12 +86,23 @@ class PyMOLSession:
             True if connected successfully
         """
         self._headless = headless
+
+        # Already connected and healthy — no-op
+        if self.is_healthy():
+            return True
+
+        # Clean up stale connection before reconnecting
+        if self.connection:
+            self.connection.disconnect()
+
         self.connection = PyMOLConnection(self.host, self.port)
 
         # Try connecting to existing instance first
         try:
             self.connection.connect(timeout=2.0)
-            self._we_launched = False
+            # Preserve _we_launched if we still own a running process
+            if not self.is_running:
+                self._we_launched = False
             return True
         except ConnectionError:
             pass
@@ -158,33 +169,11 @@ class PyMOLSession:
         if self._we_launched:
             self._kill_process(graceful_timeout=2.0)
 
-        # Also try to kill any orphaned PyMOL processes on our port
-        self._kill_processes_on_port()
-
         # Brief pause to let OS clean up
         time.sleep(0.5)
 
         # Start fresh with same headless setting
         return self.start(timeout=timeout, headless=self._headless)
-
-    def _kill_processes_on_port(self):
-        """Kill any processes listening on our port (Linux/macOS)."""
-        try:
-            result = subprocess.run(
-                ["lsof", "-ti", f":{self.port}"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if result.stdout.strip():
-                pids = result.stdout.strip().split("\n")
-                for pid in pids:
-                    try:
-                        os.kill(int(pid), signal.SIGKILL)
-                    except (ValueError, ProcessLookupError, PermissionError):
-                        pass
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
 
     def execute(self, code, auto_recover=True):
         """
@@ -204,11 +193,13 @@ class PyMOLSession:
                 else:
                     raise ConnectionError("Not connected to PyMOL")
 
+            assert self.connection is not None
             return self.connection.execute(code)
 
         except (ConnectionError, TimeoutError):
             if auto_recover:
                 self.recover()
+                assert self.connection is not None
                 return self.connection.execute(code)
             raise
 
