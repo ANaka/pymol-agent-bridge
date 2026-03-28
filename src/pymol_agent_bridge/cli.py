@@ -69,10 +69,14 @@ def _get_install_instructions():
 
     instructions = []
 
-    # Primary: dedicated environment (already recognized by find_pymol_command)
+    # macOS: Homebrew is the best option (pip wheel lacks Qt)
+    if has_brew:
+        instructions.append(("Install via Homebrew (recommended)", ["brew install pymol"]))
+
+    # Dedicated environment as fallback (or primary on Linux/Windows)
     if has_uv:
         instructions.append((
-            "Install into a dedicated environment (recommended)",
+            "Install into a dedicated environment",
             [
                 f"uv venv {env_path}",
                 f"uv pip install -p {env_path} pymol-open-source-whl",
@@ -85,13 +89,10 @@ def _get_install_instructions():
             else f"{env_path}/bin/pip"
         )
         instructions.append((
-            "Install into a dedicated environment (recommended)",
+            "Install into a dedicated environment",
             [f"python3 -m venv {env_path}", f"{pip_cmd} install pymol-open-source-whl"],
         ))
 
-    # Platform alternatives
-    if has_brew:
-        instructions.append(("Install via Homebrew", ["brew install pymol"]))
     if sys.platform == "linux":
         instructions.append(("Install via apt", ["sudo apt install pymol"]))
 
@@ -111,25 +112,30 @@ def _print_install_instructions(instructions, file=None):
 
 
 def _prompt_and_install():
-    """Offer to install PyMOL into ~/.pymol-env. Returns True on success."""
-    env_path = Path.home() / ".pymol-env"
-    has_uv = shutil.which("uv") is not None
+    """Offer to install PyMOL. Uses Homebrew on macOS, venv otherwise. Returns True on success."""
+    has_brew = sys.platform == "darwin" and shutil.which("brew") is not None
 
-    if has_uv:
-        commands = [
-            ["uv", "venv", str(env_path)],
-            ["uv", "pip", "install", "-p", str(env_path), "pymol-open-source-whl"],
-        ]
+    if has_brew:
+        commands = [["brew", "install", "pymol"]]
+        print("\nThis will install PyMOL via Homebrew")
     else:
-        pip_path = str(
-            env_path / ("Scripts" if sys.platform == "win32" else "bin") / "pip"
-        )
-        commands = [
-            [sys.executable, "-m", "venv", str(env_path)],
-            [pip_path, "install", "pymol-open-source-whl"],
-        ]
+        env_path = Path.home() / ".pymol-env"
+        has_uv = shutil.which("uv") is not None
+        if has_uv:
+            commands = [
+                ["uv", "venv", str(env_path)],
+                ["uv", "pip", "install", "-p", str(env_path), "pymol-open-source-whl"],
+            ]
+        else:
+            pip_path = str(
+                env_path / ("Scripts" if sys.platform == "win32" else "bin") / "pip"
+            )
+            commands = [
+                [sys.executable, "-m", "venv", str(env_path)],
+                [pip_path, "install", "pymol-open-source-whl"],
+            ]
+        print(f"\nThis will install PyMOL into {env_path}")
 
-    print(f"\nThis will install PyMOL into {env_path}")
     for cmd in commands:
         print(f"  $ {shlex.join(cmd)}")
 
