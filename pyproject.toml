@@ -1,6 +1,6 @@
 [project]
 name = "pymol-agent-bridge"
-version = "0.1.0"
+version = "1.0.0"
 description = "Lightweight bridge connecting coding agents to PyMOL via TCP socket"
 readme = "README.md"
 requires-python = ">=3.10"

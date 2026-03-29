@@ -18,7 +18,6 @@ import shutil
 import stat
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 from pymol_agent_bridge.connection import (
@@ -71,27 +70,39 @@ def _get_install_instructions():
 
     # macOS: Homebrew is the best option (pip wheel lacks Qt)
     if has_brew:
-        instructions.append(("Install via Homebrew (recommended)", ["brew install pymol"]))
+        instructions.append(
+            (
+                "Install via Homebrew (recommended)",
+                ["brew install pymol"],
+            )
+        )
 
     # Dedicated environment as fallback (or primary on Linux/Windows)
     if has_uv:
-        instructions.append((
-            "Install into a dedicated environment",
-            [
-                f"uv venv {env_path}",
-                f"uv pip install -p {env_path} pymol-open-source-whl",
-            ],
-        ))
+        instructions.append(
+            (
+                "Install into a dedicated environment",
+                [
+                    f"uv venv {env_path}",
+                    f"uv pip install -p {env_path} pymol-open-source-whl",
+                ],
+            )
+        )
     else:
         pip_cmd = (
             f"{env_path}/Scripts/pip"
             if sys.platform == "win32"
             else f"{env_path}/bin/pip"
         )
-        instructions.append((
-            "Install into a dedicated environment",
-            [f"python3 -m venv {env_path}", f"{pip_cmd} install pymol-open-source-whl"],
-        ))
+        instructions.append(
+            (
+                "Install into a dedicated environment",
+                [
+                    f"python3 -m venv {env_path}",
+                    f"{pip_cmd} install pymol-open-source-whl",
+                ],
+            )
+        )
 
     if sys.platform == "linux":
         instructions.append(("Install via apt", ["sudo apt install pymol"]))
@@ -112,7 +123,10 @@ def _print_install_instructions(instructions, file=None):
 
 
 def _prompt_and_install():
-    """Offer to install PyMOL. Uses Homebrew on macOS, venv otherwise. Returns True on success."""
+    """Offer to install PyMOL. Uses Homebrew on macOS, venv otherwise.
+
+    Returns True on success.
+    """
     has_brew = sys.platform == "darwin" and shutil.which("brew") is not None
 
     if has_brew:
@@ -190,9 +204,7 @@ def setup_pymol():
             else:
                 _print_install_instructions(_get_install_instructions())
         else:
-            _print_install_instructions(
-                _get_install_instructions(), file=sys.stderr
-            )
+            _print_install_instructions(_get_install_instructions(), file=sys.stderr)
 
     # Step 2: Configure .pymolrc
     pymolrc_path = find_pymolrc_path()
@@ -238,46 +250,6 @@ def check_status():
         return 1
 
 
-def run_doctor():
-    """Perform a system check for common issues."""
-    print("Checking system health for pymol-agent-bridge...")
-    all_ok = True
-
-    # Check OS & Python
-    print(f"[OK] OS: {sys.platform}")
-    vi = sys.version_info
-    py_ver = f"{vi.major}.{vi.minor}.{vi.micro}"
-    if sys.version_info >= (3, 10):
-        print(f"[OK] Python: {py_ver}")
-    else:
-        print(f"[ERROR] Python: {py_ver} (Requires >=3.10)")
-        all_ok = False
-
-    # Check PyMOL
-    pymol_cmd = find_pymol_command()
-    if pymol_cmd:
-        print(f"[OK] PyMOL found: {' '.join(pymol_cmd)}")
-    else:
-        print("[ERROR] PyMOL not found in PATH or common locations")
-        print("        Run 'pymol-agent-bridge setup' to install")
-        all_ok = False
-
-    # Check .pymolrc
-    pymolrc_path = find_pymolrc_path()
-    if pymolrc_path.exists():
-        print(f"[OK] PyMOL config found: {pymolrc_path}")
-        if is_plugin_in_pymolrc():
-            print("[OK] Bridge plugin is configured in PyMOL config")
-        else:
-            print("[WARN] Bridge plugin NOT configured in PyMOL config")
-            all_ok = False
-    else:
-        print("[WARN] PyMOL config not found")
-        all_ok = False
-
-    return 0 if all_ok else 1
-
-
 def test_connection():
     """Test the PyMOL connection with a simple command."""
     conn = PyMOLConnection()
@@ -316,65 +288,6 @@ def do_launch(args):
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
-
-
-def do_repl():
-    """Start an interactive PyMOL shell."""
-    print("PyMOL Bridge Interactive Shell. Type 'exit' to quit.")
-    conn = PyMOLConnection()
-    try:
-        conn.connect(timeout=2.0)
-        while True:
-            line = input("pymol> ")
-            if line.lower() in ("exit", "quit"):
-                break
-            if not line.strip():
-                continue
-            print(conn.execute(line))
-    except (EOFError, KeyboardInterrupt):
-        print()
-    except Exception as e:
-        print(f"Error: {e}")
-    return 0
-
-
-def do_watch(args):
-    """Watch a file and send it to PyMOL on change."""
-    path = Path(args.file)
-    print(f"Watching {path}... (Ctrl-C to stop)")
-    last_mtime = None
-    waiting_for_file = False
-    conn = PyMOLConnection()
-    try:
-        while True:
-            try:
-                mtime = path.stat().st_mtime
-            except FileNotFoundError:
-                if not waiting_for_file:
-                    print(f"Waiting for file: {path}")
-                    waiting_for_file = True
-                last_mtime = None
-                time.sleep(0.5)
-                continue
-
-            waiting_for_file = False
-            if mtime != last_mtime:
-                print("Sending change...")
-                try:
-                    code = path.read_text()
-                    conn.connect(timeout=2.0)
-                    print(conn.execute(code))
-                except OSError as e:
-                    print(f"Error reading {path}: {e}")
-                except Exception as e:
-                    print(f"Error: {e}")
-                else:
-                    last_mtime = mtime
-            time.sleep(0.5)
-    except KeyboardInterrupt:
-        return 0
-    finally:
-        conn.disconnect()
 
 
 def do_run_code(args):
@@ -429,17 +342,12 @@ def main():
 
     subparsers.add_parser("setup")
     subparsers.add_parser("status")
-    subparsers.add_parser("doctor")
     subparsers.add_parser("test")
     subparsers.add_parser("info")
-    subparsers.add_parser("repl")
 
     l_p = subparsers.add_parser("launch")
     l_p.add_argument("file", nargs="?")
     l_p.add_argument("--headless", action="store_true")
-
-    w_p = subparsers.add_parser("watch")
-    w_p.add_argument("file")
 
     for cmd in ["exec", "run-code"]:
         e_p = subparsers.add_parser(cmd)
@@ -455,11 +363,8 @@ def main():
     cmds = {
         "setup": setup_pymol,
         "status": check_status,
-        "doctor": run_doctor,
         "test": test_connection,
         "info": show_info,
-        "repl": do_repl,
-        "watch": lambda: do_watch(args),
         "launch": lambda: do_launch(args),
         "exec": lambda: do_run_code(args),
         "run-code": lambda: do_run_code(args),

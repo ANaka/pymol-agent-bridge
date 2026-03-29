@@ -29,8 +29,14 @@ Send any PyMOL Python code via `exec`:
 # Run multiple commands
 ~/.pymol-agent-bridge/bin/pymol-agent-bridge exec "cmd.fetch('1ubq'); cmd.show('cartoon'); cmd.color('cyan')"
 
+# Execute from a file
+~/.pymol-agent-bridge/bin/pymol-agent-bridge exec -f script.py
+
 # Pipe from stdin
 echo "cmd.fetch('1ubq')" | ~/.pymol-agent-bridge/bin/pymol-agent-bridge exec
+
+# Get JSON output
+~/.pymol-agent-bridge/bin/pymol-agent-bridge exec --json "cmd.fetch('1ubq'); print(cmd.get_area('all'))"
 ```
 
 ## Image Capture
@@ -57,13 +63,3 @@ cmd.png('/tmp/output.png', 2400, 2400)  # DO NOT DO THIS
 - **Stale processes**: If `launch` fails with a timeout, a previous PyMOL may still hold the port. Check with `lsof -ti :9880` and kill if needed.
 - **Plugin not loaded**: If `status` shows "not available", PyMOL may be running without the plugin. Run `pymol-agent-bridge setup` to configure auto-loading, then restart PyMOL.
 - **Headless rendering**: In headless mode (`-c`), PyMOL can still ray-trace and save images. It just doesn't open a window.
-
-## PyMOL Commands (in PyMOL's terminal)
-
-The plugin registers these commands inside PyMOL:
-
-```
-bridge_status   # Show listener status
-bridge_stop     # Stop the listener
-bridge_start    # Restart the listener
-```
