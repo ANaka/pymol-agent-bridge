@@ -67,10 +67,14 @@ _server = None
 _port = 9880
 
 
+_MAX_LOG_LENGTH = 200
+
+
 class SocketServer:
-    def __init__(self, host="localhost", port=9880):
+    def __init__(self, host="localhost", port=9880, verbose=True):
         self.host = host
         self.port = port
+        self.verbose = verbose
         self.socket = None
         self.running = False
         self.thread = None
@@ -162,6 +166,12 @@ class SocketServer:
         code = command.get("code", "")
         if not code:
             return {"status": "error", "error": "No code provided"}
+        if self.verbose:
+            if len(code) > _MAX_LOG_LENGTH:
+                display = code[:_MAX_LOG_LENGTH] + "..."
+            else:
+                display = code
+            print(f"[bridge] {display}")
         try:
             exec_globals = {"cmd": cmd, "__builtins__": __builtins__}
             output_buffer = io.StringIO()
@@ -240,8 +250,13 @@ def _port_in_use(port):
         s.close()
 
 
-def bridge_start(port=9880):
-    """Start the agent bridge listener."""
+def bridge_start(port=9880, verbose=True):
+    """Start the agent bridge listener.
+
+    Args:
+        port: TCP port to listen on.
+        verbose: If True, log each command to PyMOL's console.
+    """
     global _server, _port
     if _server and _server.is_running:
         print(f"Agent bridge listener already running on port {_port}")
@@ -250,7 +265,7 @@ def bridge_start(port=9880):
         print(f"Agent bridge listener already active on port {port} (skipping)")
         return
     _port = port
-    _server = SocketServer(port=port)
+    _server = SocketServer(port=port, verbose=verbose)
     _server.start()
 
 
