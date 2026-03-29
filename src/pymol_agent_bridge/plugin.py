@@ -250,12 +250,12 @@ def _port_in_use(port):
         s.close()
 
 
-def bridge_start(port=9880, verbose=True):
+def bridge_start(port=9880, verbose=1):
     """Start the agent bridge listener.
 
     Args:
         port: TCP port to listen on.
-        verbose: If True, log each command to PyMOL's console.
+        verbose: Log each command to PyMOL's console (1=on, 0=off).
     """
     global _server, _port
     if _server and _server.is_running:
@@ -265,7 +265,7 @@ def bridge_start(port=9880, verbose=True):
         print(f"Agent bridge listener already active on port {port} (skipping)")
         return
     _port = port
-    _server = SocketServer(port=port, verbose=verbose)
+    _server = SocketServer(port=port, verbose=bool(int(verbose)))
     _server.start()
 
 
