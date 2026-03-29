@@ -1,15 +1,16 @@
 # pymol-agent-bridge
 
-Lightweight bridge connecting coding agents to [PyMOL](https://pymol.org) via TCP socket. No LLM layer, no API keys, no UI opinions. Works with any coding agent that has a terminal.
+A lightweight bridge that lets coding agents control [PyMOL](https://pymol.org). Works with any agent that has a terminal — Claude Code, Cursor, Codex, or anything else.
 
-## Features
+## Why
 
-- **Cross-platform**: Supports macOS, Linux, and Windows.
-- **Zero-dependency**: Pure Python standard library.
-- **Agent-friendly**: Clean CLI interface, JSON output support, and stable paths for tool integration.
-- **Live-coding**: `watch` mode to auto-reload scripts as you edit them.
-- **Interactive**: Built-in `repl` for quick testing.
-- **Diagnostic**: `doctor` command to troubleshoot setup issues.
+PyMOL is powerful but complex. Coding agents make it accessible: you describe what you want in plain language and the agent handles the PyMOL commands. Because agents work in your terminal alongside your code, they can tie together structure analysis, literature, data pipelines, and visualization in ways that a standalone tool can't — fetching structures from databases, annotating functional sites from literature, labeling residues with predictions, or sanity-checking de novo protein designs.
+
+This bridge connects your agent to a running PyMOL instance. That's all it does. No new UI, no LLM layer, no wrapper around PyMOL's functionality — just a pipe between your agent's terminal and PyMOL's Python API.
+
+## How it works
+
+Setup installs a small plugin into your `.pymolrc` that opens a TCP socket listener inside PyMOL. When your agent needs to interact with PyMOL, it sends Python commands through this socket via a simple CLI. The commands execute against PyMOL's standard `cmd.*` API, and results come back over the same connection. One socket, one port (9880), zero runtime dependencies.
 
 ## Install
 
@@ -18,69 +19,28 @@ pip install pymol-agent-bridge
 pymol-agent-bridge setup
 ```
 
+Setup will find your PyMOL installation (or help you install it), configure the bridge plugin in your `.pymolrc`, and create a stable wrapper script at `~/.pymol-agent-bridge/bin/pymol-agent-bridge`.
+
 ## Usage
 
-### Basic Commands
-```bash
-# Launch PyMOL with the bridge plugin
-pymol-agent-bridge launch
+After setup, open your coding agent and start working:
 
-# Execute commands (standard Python/PyMOL API)
-pymol-agent-bridge exec "cmd.fetch('1ubq')"
+> "Load the structure 1UBQ and color it by secondary structure"
 
-# Execute from a file
-pymol-agent-bridge exec -f script.py
-# Or using the @ prefix
-pymol-agent-bridge exec @script.py
+> "Fetch 6LU7, highlight the active site residues, and render a high-res image"
 
-# Watch a file and reload on change (Live Coding)
-pymol-agent-bridge watch script.py
+> "Compare the binding pockets of these two kinase structures"
 
-# Interactive REPL
-pymol-agent-bridge repl
+The agent launches PyMOL if needed, sends commands through the bridge, and shows you the results. You don't need to learn any CLI commands — the agent knows how to use the bridge.
 
-# Check system health
-pymol-agent-bridge doctor
-```
+## Features
 
-### Headless / Batch Mode
-```bash
-# Launch without GUI
-pymol-agent-bridge launch --headless
-
-# Run and get JSON output
-pymol-agent-bridge exec "cmd.fetch('1ubq'); print(cmd.get_area('all'))" --json
-```
-
-## Agent Integration
-
-This bridge is designed to be used as a **tool** for coding agents (Claude, Cursor, GPT-4, etc.). 
-
-### Why Agents love this
-- **Fast**: TCP socket is much faster than launching PyMOL per command.
-- **Context-aware**: PyMOL's state is preserved between `exec` calls.
-- **Standard**: Uses the standard PyMOL Python API (`cmd.*`).
-
-### Recommended Agent Setup
-Point your agent to the stable wrapper script created during `setup`:
-- macOS/Linux: `~/.pymol-agent-bridge/bin/pymol-agent-bridge`
-- Windows: `~/.pymol-agent-bridge/bin/pymol-agent-bridge.bat`
-
-## Troubleshooting
-
-Run `pymol-agent-bridge doctor` to check for:
-- PyMOL installation and PATH.
-- `.pymolrc` / `pymolrc.py` configuration.
-- Port 9880 availability.
-
-## Image Capture Tip
-
-Always use `cmd.ray()` then `cmd.png()` separately to avoid view matrix corruption in PyMOL.
-
-```python
-cmd.ray(2400, 2400)
-cmd.png('output.png')
-```
+- **Zero dependencies** — Pure Python standard library. Nothing to install beyond the bridge itself.
+- **Cross-platform** — macOS, Linux, and Windows.
+- **Persistent session** — PyMOL stays running between commands. State is preserved.
+- **JSON output** — Structured output mode for programmatic use.
+- **Stable paths** — Wrapper script with baked Python path survives environment changes.
+- **Agent-agnostic** — Works with any coding agent that can run shell commands.
 
 ## License
 
