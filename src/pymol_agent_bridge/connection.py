@@ -184,7 +184,7 @@ class PyMOLConnection:
                     return result.get("output", "")
                 else:
                     raise RuntimeError(result.get("error", "Unknown error"))
-            except (ConnectionError, TimeoutError):
+            except ConnectionError:
                 if attempt < 2:
                     time.sleep(0.5)
                     continue
