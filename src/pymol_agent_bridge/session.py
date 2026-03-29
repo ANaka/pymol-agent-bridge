@@ -196,7 +196,7 @@ class PyMOLSession:
             assert self.connection is not None
             return self.connection.execute(code)
 
-        except (ConnectionError, TimeoutError):
+        except ConnectionError:
             if auto_recover:
                 self.recover()
                 assert self.connection is not None

@@ -172,7 +172,11 @@ class SocketServer:
                 output = str(exec_globals["_result"])
             return {"status": "success", "output": output or "OK"}
         except Exception as e:
-            return {"status": "error", "error": str(e)}
+            return {
+                "status": "error",
+                "error": str(e),
+                "traceback": traceback.format_exc(),
+            }
 
     def _cleanup(self):
         with self._client_lock:

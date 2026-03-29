@@ -183,8 +183,14 @@ class PyMOLConnection:
                 if result.get("status") == "success":
                     return result.get("output", "")
                 else:
-                    raise RuntimeError(result.get("error", "Unknown error"))
-            except (ConnectionError, TimeoutError):
+                    error = result.get("error", "Unknown error")
+                    traceback_text = result.get("traceback")
+                    if traceback_text:
+                        raise RuntimeError(
+                            f"{error}\n\nPyMOL traceback:\n{traceback_text}"
+                        )
+                    raise RuntimeError(error)
+            except ConnectionError:
                 if attempt < 2:
                     time.sleep(0.5)
                     continue
