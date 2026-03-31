@@ -236,6 +236,103 @@ def setup_pymol():
     return 0
 
 
+def _remove_plugin_block(pymolrc_path: Path) -> bool:
+    """Remove bridge plugin lines from a PyMOL config file.
+
+    Returns True when the file was modified.
+    """
+    if not pymolrc_path.exists():
+        return False
+
+    try:
+        lines = pymolrc_path.read_text().splitlines(keepends=True)
+    except OSError:
+        return False
+
+    kept_lines = []
+    modified = False
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        # Remove the setup-written 2-line block as a unit.
+        if stripped == "# pymol-agent-bridge" and i + 1 < len(lines):
+            next_line = lines[i + 1]
+            if "pymol_agent_bridge" in next_line or "pymol-agent-bridge" in next_line:
+                modified = True
+                i += 2
+                continue
+
+        # Also remove any direct run/import line containing bridge markers.
+        if "pymol_agent_bridge" in line or "pymol-agent-bridge" in line:
+            modified = True
+            i += 1
+            continue
+
+        kept_lines.append(line)
+        i += 1
+
+    if not modified:
+        return False
+
+    try:
+        pymolrc_path.write_text("".join(kept_lines))
+    except OSError:
+        return False
+    return True
+
+
+def do_uninstall(args):
+    """Remove bridge configuration and local bridge files."""
+    pymolrc_path = find_pymolrc_path()
+    bridge_home = WRAPPER_DIR.parent
+
+    if not args.yes:
+        try:
+            is_tty = os.isatty(sys.stdin.fileno())
+        except (AttributeError, ValueError, OSError):
+            is_tty = False
+
+        if not is_tty:
+            print(
+                "Refusing to run uninstall non-interactively without --yes.",
+                file=sys.stderr,
+            )
+            return 1
+
+        print("This will remove:")
+        print(f"  - Bridge plugin lines in {pymolrc_path}")
+        print(f"  - {bridge_home} (wrapper + local config)")
+        try:
+            answer = input("Proceed? [y/N] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            print("Uninstall cancelled.")
+            return 0
+        if answer not in ("y", "yes"):
+            print("Uninstall cancelled.")
+            return 0
+
+    if _remove_plugin_block(pymolrc_path):
+        print(f"Removed bridge plugin lines from {pymolrc_path}")
+    else:
+        print(f"No bridge plugin lines found in {pymolrc_path}")
+
+    if bridge_home.exists():
+        try:
+            shutil.rmtree(bridge_home)
+            print(f"Removed {bridge_home}")
+        except OSError as e:
+            print(f"Failed to remove {bridge_home}: {e}", file=sys.stderr)
+            return 1
+    else:
+        print(f"No local bridge directory found at {bridge_home}")
+
+    print("Uninstall complete.")
+    return 0
+
+
 def check_status():
     """Check PyMOL connection status."""
     print("Checking PyMOL status...")
@@ -364,6 +461,7 @@ def main():
             "  1. pymol-agent-bridge setup           # one-time config\n"
             "  2. pymol-agent-bridge launch           # start PyMOL\n"
             '  3. pymol-agent-bridge exec "code"      # send Python to PyMOL\n'
+            "  4. pymol-agent-bridge uninstall --yes  # remove bridge config/files\n"
             "\n"
             "library: from pymol_agent_bridge import PyMOLConnection\n"
             "\n"
@@ -379,6 +477,15 @@ def main():
 
     subparsers.add_parser(
         "setup", help="Configure PyMOL to auto-load the bridge plugin"
+    )
+    u_p = subparsers.add_parser(
+        "uninstall", help="Remove bridge config and local wrapper/config files"
+    )
+    u_p.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Skip confirmation prompt",
     )
     subparsers.add_parser("status", help="Check if PyMOL is running and connected")
     subparsers.add_parser("test", help="Test the connection with a simple command")
@@ -409,6 +516,7 @@ def main():
 
     cmds = {
         "setup": setup_pymol,
+        "uninstall": lambda: do_uninstall(args),
         "status": check_status,
         "test": test_connection,
         "info": lambda: show_info(json_output=args.json),

@@ -1,6 +1,6 @@
 # pymol-agent-bridge
 
-A lightweight bridge that lets coding agents control [PyMOL](https://pymol.org). Works with any agent that has a terminal — Claude Code, Cursor, Codex, Gemini CLI, or anything else. Zero runtime dependencies.
+A lightweight bridge that lets coding agents control [PyMOL](https://pymol.org). Works with any agent that has a terminal — Claude Code, Cursor, Codex, Gemini CLI, or anything else. Zero runtime dependencies. Built to be used with [claudemol](https://github.com/ANaka/claudemol) skills but that's optional.
 
 ## Why
 
@@ -21,22 +21,26 @@ pymol-agent-bridge setup
 
 Setup will find your PyMOL installation (or help you install it), configure the bridge plugin in your `.pymolrc`, and create a stable wrapper script at `~/.pymol-agent-bridge/bin/pymol-agent-bridge`.
 
-**Claude Code users** can also install via plugin for additional skills:
-```
-/plugin install pymol-agent-bridge@claude-plugins-official
-```
 
 ## Usage
 
 After setup, open your coding agent and start working:
 
 > "Load the structure 1UBQ and color it by secondary structure"
-
 > "Fetch 6LU7, highlight the active site residues, and render a high-res image"
-
 > "Compare the binding pockets of these two kinase structures"
 
 The agent launches PyMOL if needed, sends commands through the bridge, and shows you the results. You don't need to learn any CLI commands — the agent knows how to use the bridge.
+
+## Uninstall
+
+
+```bash
+pymol-agent-bridge uninstall 
+# removes bridge plugin lines from your PyMOL config file
+# and deletes `~/.pymol-agent-bridge`
+pip uninstall pymol-agent-bridge # or uv remove, etc
+```
 
 ## Library usage
 

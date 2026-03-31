@@ -271,6 +271,55 @@ class TestDoLaunch:
 
 
 # ---------------------------------------------------------------------------
+# uninstall
+# ---------------------------------------------------------------------------
+
+
+class TestUninstall:
+    def test_uninstall_removes_plugin_and_bridge_home(
+        self, tmp_home, monkeypatch, capsys
+    ):
+        """uninstall removes plugin block and local bridge directory."""
+        rc_path = tmp_home / ".pymolrc"
+        rc_path.write_text(
+            "set ray_shadow, 0\n# pymol-agent-bridge\nrun /tmp/pymol_agent_bridge/plugin.py\n"
+        )
+        bridge_home = tmp_home / ".pymol-agent-bridge"
+        bridge_home.mkdir(parents=True)
+        (bridge_home / "config.json").write_text("{}")
+
+        monkeypatch.setattr(cli, "find_pymolrc_path", lambda: rc_path)
+        monkeypatch.setattr(cli, "WRAPPER_DIR", bridge_home / "bin")
+
+        import argparse
+
+        ret = cli.do_uninstall(argparse.Namespace(yes=True))
+        out = capsys.readouterr().out
+
+        assert ret == 0
+        assert "# pymol-agent-bridge" not in rc_path.read_text()
+        assert "pymol_agent_bridge" not in rc_path.read_text()
+        assert not bridge_home.exists()
+        assert "Uninstall complete." in out
+
+    def test_uninstall_noninteractive_requires_yes(
+        self, tmp_home, monkeypatch, capsys
+    ):
+        """uninstall exits with error in non-interactive mode without --yes."""
+        rc_path = tmp_home / ".pymolrc"
+        monkeypatch.setattr(cli, "find_pymolrc_path", lambda: rc_path)
+        monkeypatch.setattr("os.isatty", lambda _: False)
+
+        import argparse
+
+        ret = cli.do_uninstall(argparse.Namespace(yes=False))
+        err = capsys.readouterr().err
+
+        assert ret == 1
+        assert "without --yes" in err
+
+
+# ---------------------------------------------------------------------------
 # main() dispatch
 # ---------------------------------------------------------------------------
 
@@ -307,5 +356,19 @@ class TestMainDispatch:
             return 0
 
         monkeypatch.setattr(cli, "do_run_code", fake_do_run_code)
+        cli.main()
+        assert called["yes"]
+
+    def test_dispatches_uninstall(self, monkeypatch):
+        """'uninstall' subcommand calls do_uninstall."""
+        monkeypatch.setattr(sys, "argv", ["pymol-agent-bridge", "uninstall", "--yes"])
+        called = {"yes": False}
+
+        def fake_do_uninstall(args):
+            called["yes"] = True
+            assert args.yes is True
+            return 0
+
+        monkeypatch.setattr(cli, "do_uninstall", fake_do_uninstall)
         cli.main()
         assert called["yes"]
