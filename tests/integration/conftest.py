@@ -16,6 +16,7 @@ def pymol_process():
 
     process = subprocess.Popen(
         pymol_cmd,
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
