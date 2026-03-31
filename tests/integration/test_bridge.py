@@ -68,8 +68,6 @@ class TestExec:
 
     def test_json_output(self, pymol_process):
         """execute() result can be wrapped as JSON for agent consumption."""
-        import json
-
         conn = PyMOLConnection()
         conn.connect(timeout=5.0)
         result = conn.execute("print('hello from pymol')")
