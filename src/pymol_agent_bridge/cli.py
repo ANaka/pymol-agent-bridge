@@ -1,13 +1,12 @@
 """
-CLI for pymol-agent-bridge setup and management.
+CLI for pymol-agent-bridge: TCP bridge between coding agents and PyMOL.
 
-Usage:
-    pymol-agent-bridge setup    # Configure PyMOL to auto-load the socket plugin
-    pymol-agent-bridge status   # Check if PyMOL is running and connected
-    pymol-agent-bridge test     # Test the connection
-    pymol-agent-bridge info     # Show installation info
-    pymol-agent-bridge launch   # Launch PyMOL or connect to existing instance
-    pymol-agent-bridge exec     # Execute code in PyMOL
+Workflow: setup -> launch -> exec
+    pymol-agent-bridge setup           # one-time config
+    pymol-agent-bridge launch           # start PyMOL
+    pymol-agent-bridge exec "code"      # send Python to PyMOL
+
+Library: from pymol_agent_bridge import PyMOLConnection
 """
 
 import argparse
@@ -20,6 +19,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from pymol_agent_bridge import __version__
 from pymol_agent_bridge.connection import (
     PyMOLConnection,
     connect_or_launch,
@@ -264,15 +264,34 @@ def test_connection():
         return 1
 
 
-def show_info():
+def show_info(json_output=False):
     """Show pymol-agent-bridge installation info."""
-    print("pymol-agent-bridge installation info:")
-    print(f"  Plugin: {get_plugin_path()}")
-    print(f"  .pymolrc: {find_pymolrc_path()}")
-    print(f"  Wrapper: {WRAPPER_PATH}")
+    plugin_path = str(get_plugin_path())
+    pymolrc_path = str(find_pymolrc_path())
+    wrapper_path = str(WRAPPER_PATH)
     config = get_config()
-    if config:
-        print(f"  Config: {config}")
+
+    if json_output:
+        print(
+            json.dumps(
+                {
+                    "version": __version__,
+                    "plugin_path": plugin_path,
+                    "pymolrc_path": pymolrc_path,
+                    "wrapper_path": wrapper_path,
+                    "config": config,
+                }
+            )
+        )
+    else:
+        print("pymol-agent-bridge installation info:")
+        print(f"  Version: {__version__}")
+        print(f"  Plugin: {plugin_path}")
+        print(f"  .pymolrc: {pymolrc_path}")
+        print(f"  Wrapper: {wrapper_path}")
+        if config:
+            print(f"  Config: {config}")
+    return 0
 
 
 def do_launch(args):
@@ -337,37 +356,64 @@ def do_run_code(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="pymol-agent-bridge")
+    parser = argparse.ArgumentParser(
+        prog="pymol-agent-bridge",
+        description="TCP bridge between coding agents and PyMOL. Zero dependencies.",
+        epilog=(
+            "workflow: setup -> launch -> exec\n"
+            "  1. pymol-agent-bridge setup           # one-time config\n"
+            "  2. pymol-agent-bridge launch           # start PyMOL\n"
+            '  3. pymol-agent-bridge exec "code"      # send Python to PyMOL\n'
+            "\n"
+            "library: from pymol_agent_bridge import PyMOLConnection\n"
+            "\n"
+            "image capture: always use cmd.ray(w, h) then cmd.png(path)\n"
+            "  NEVER pass dimensions to cmd.png() directly"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
     subparsers = parser.add_subparsers(dest="command")
 
-    subparsers.add_parser("setup")
-    subparsers.add_parser("status")
-    subparsers.add_parser("test")
-    subparsers.add_parser("info")
+    subparsers.add_parser(
+        "setup", help="Configure PyMOL to auto-load the bridge plugin"
+    )
+    subparsers.add_parser("status", help="Check if PyMOL is running and connected")
+    subparsers.add_parser("test", help="Test the connection with a simple command")
 
-    l_p = subparsers.add_parser("launch")
-    l_p.add_argument("file", nargs="?")
-    l_p.add_argument("--headless", action="store_true")
+    info_p = subparsers.add_parser("info", help="Show installation paths and config")
+    info_p.add_argument("--json", action="store_true", help="Output as JSON")
 
-    for cmd in ["exec", "run-code"]:
-        e_p = subparsers.add_parser(cmd)
-        e_p.add_argument("code", nargs="?")
-        e_p.add_argument("-f", "--file")
-        e_p.add_argument("--json", action="store_true")
+    l_p = subparsers.add_parser(
+        "launch", help="Launch PyMOL or connect to existing instance"
+    )
+    l_p.add_argument("file", nargs="?", help="PDB/CIF file to open")
+    l_p.add_argument("--headless", action="store_true", help="Launch without GUI")
 
-    args = parser.parse_args()
+    e_p = subparsers.add_parser("exec", help="Execute Python code in PyMOL")
+    e_p.add_argument("code", nargs="?")
+    e_p.add_argument("-f", "--file", help="Execute code from file")
+    e_p.add_argument("--json", action="store_true", help="Output as JSON")
+
+    # Hidden alias: "run-code" -> "exec" (rewrite before parsing)
+    argv = sys.argv[1:]
+    if argv and argv[0] == "run-code":
+        argv[0] = "exec"
+
+    args = parser.parse_args(argv)
     if not args.command:
-        show_info()
+        parser.print_help()
         return 0
 
     cmds = {
         "setup": setup_pymol,
         "status": check_status,
         "test": test_connection,
-        "info": show_info,
+        "info": lambda: show_info(json_output=args.json),
         "launch": lambda: do_launch(args),
         "exec": lambda: do_run_code(args),
-        "run-code": lambda: do_run_code(args),
     }
     return cmds[args.command]()
 
