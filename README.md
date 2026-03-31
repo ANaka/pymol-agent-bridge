@@ -1,6 +1,6 @@
 # pymol-agent-bridge
 
-A lightweight bridge that lets coding agents control [PyMOL](https://pymol.org). Built for Claude Code but should work with any coding agent.
+A lightweight, zero deps bridge that lets coding agents control [PyMOL](https://pymol.org). Built for Claude Code but should work with any coding agent.
 
 ## Why
 
@@ -14,12 +14,24 @@ Setup installs a small plugin into your `.pymolrc` that opens a TCP socket liste
 
 ## Install
 
-```bash
-uv add pymol-agent-bridge # (or pip install)
-pymol-agent-bridge setup
+```shell
+/plugin install pymol-agent-bridge@claude-plugins-official
+/reload-plugins
 ```
 
-Setup will find your PyMOL installation (or help you install it), configure the bridge plugin in your `.pymolrc`, and create a stable wrapper script at `~/.pymol-agent-bridge/bin/pymol-agent-bridge`.
+```shell
+# in claude code
+Please run the pymol-agent-bridge setup
+```
+
+This will find your PyMOL installation (or help you install it), configure the bridge plugin in your `.pymolrc`, and create a stable wrapper script at `~/.pymol-agent-bridge/bin/pymol-agent-bridge`.
+
+## If you want to do it manually
+
+```bash
+uv add pymol-agent-bridge # (or pip install pymol-agent-bridge)
+pymol-agent-bridge setup
+```
 
 ## Usage
 
@@ -40,7 +52,6 @@ The agent launches PyMOL if needed, sends commands through the bridge, and shows
 - **Persistent session** — PyMOL stays running between commands. State is preserved.
 - **JSON output** — Structured output mode for programmatic use.
 - **Stable paths** — Wrapper script with baked Python path survives environment changes.
-- **Agent-agnostic** — Works with any coding agent that can run shell commands.
 
 ## License
 

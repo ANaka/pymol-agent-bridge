@@ -1,5 +1,5 @@
 ---
-name: bridge-basics
+name: pymol
 description: How to use pymol-agent-bridge to connect to and control PyMOL
 ---
 
