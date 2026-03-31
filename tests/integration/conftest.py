@@ -12,7 +12,17 @@ from pymol_agent_bridge.connection import PyMOLConnection, get_plugin_path
 def pymol_process():
     """Launch PyMOL headless with the bridge plugin for the test session."""
     plugin_path = get_plugin_path()
-    pymol_cmd = ["pymol", "-c", "-d", f"run {plugin_path}"]
+    # The socket server runs as a daemon thread. In -c mode, PyMOL's main
+    # thread exits after processing -d commands, killing daemon threads.
+    # Inject a blocking wait to keep the main thread (and daemon threads) alive.
+    pymol_cmd = [
+        "pymol",
+        "-c",
+        "-d",
+        f"run {plugin_path}",
+        "-d",
+        "import threading; threading.Event().wait()",
+    ]
 
     process = subprocess.Popen(
         pymol_cmd,
