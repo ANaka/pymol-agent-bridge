@@ -21,7 +21,7 @@ pymol-agent-bridge setup
 
 Setup will find your PyMOL installation (or help you install it), configure the bridge plugin in your `.pymolrc`, and create a stable wrapper script at `~/.pymol-agent-bridge/bin/pymol-agent-bridge`.
 
-**Claude Code users** can also install via plugin for additional skills:
+**Claude Code users** can also install via the plugin registry:
 ```
 /plugin install pymol-agent-bridge@claude-plugins-official
 ```
