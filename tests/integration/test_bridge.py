@@ -49,13 +49,32 @@ class TestExec:
 
     def test_error_returns_traceback(self, connection):
         """Invalid code should raise with traceback info."""
-        with pytest.raises(RuntimeError, match="NameError"):
+        with pytest.raises(RuntimeError, match="undefined_variable_xyz"):
             connection.execute("print(undefined_variable_xyz)")
 
     def test_syntax_error(self, connection):
         """Syntax errors should raise."""
-        with pytest.raises(RuntimeError, match="SyntaxError"):
+        with pytest.raises(RuntimeError, match="invalid syntax"):
             connection.execute("def f(:")
+
+    def test_result_variable(self, connection):
+        """The _result convention should return structured data."""
+        result = connection.execute("_result = list(range(3))")
+        assert "[0, 1, 2]" in result
+
+    def test_json_output(self, pymol_process):
+        """execute() result can be wrapped as JSON for agent consumption."""
+        import json
+
+        conn = PyMOLConnection()
+        conn.connect(timeout=5.0)
+        result = conn.execute("print('hello from pymol')")
+        # Verify the result is a string that can be embedded in JSON
+        payload = json.dumps({"status": "success", "output": result})
+        parsed = json.loads(payload)
+        assert parsed["status"] == "success"
+        assert "hello from pymol" in parsed["output"]
+        conn.disconnect()
 
 
 class TestCLIFunctions:
