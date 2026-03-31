@@ -8,6 +8,24 @@ dependencies = []
 license = { text = "MIT" }
 keywords = ["pymol", "molecular-visualization", "agent", "bridge", "structural-biology"]
 authors = [{ name = "Alex Naka", email = "alex.naka@gmail.com" }]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+
+[project.urls]
+Homepage = "https://github.com/ANaka/pymol-agent-bridge"
+Repository = "https://github.com/ANaka/pymol-agent-bridge"
+Issues = "https://github.com/ANaka/pymol-agent-bridge/issues"
 
 [project.scripts]
 pymol-agent-bridge = "pymol_agent_bridge.cli:main"
