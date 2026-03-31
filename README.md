@@ -1,12 +1,12 @@
 # pymol-agent-bridge
 
-A lightweight bridge that lets coding agents control [PyMOL](https://pymol.org). Works with any agent that has a terminal — Claude Code, Cursor, Codex, or anything else.
+A lightweight bridge that lets coding agents control [PyMOL](https://pymol.org). Built for Claude Code but should work with any coding agent.
 
 ## Why
 
-PyMOL is powerful but complex. Coding agents make it accessible: you describe what you want in plain language and the agent handles the PyMOL commands. Because agents work in your terminal alongside your code, they can tie together structure analysis, literature, data pipelines, and visualization in ways that a standalone tool can't — fetching structures from databases, annotating functional sites from literature, labeling residues with predictions, or sanity-checking de novo protein designs.
+PyMOL is powerful but hard. Agents make it easy. They are also an excellent way to connect pymol to tools and data — fetching structures from databases, annotating functional sites from literature, labeling residues with model predictions, or sanity-checking de novo protein designs.
 
-This bridge connects your agent to a running PyMOL instance. That's all it does. No new UI, no LLM layer, no wrapper around PyMOL's functionality — just a pipe between your agent's terminal and PyMOL's Python API.
+This bridge connects your agent to a running PyMOL instance. That's all it does. No new UI, no LLM layer, no wrapper around PyMOL's functionality - just a pipe between your agent's terminal and PyMOL's Python API.
 
 ## How it works
 
@@ -15,7 +15,7 @@ Setup installs a small plugin into your `.pymolrc` that opens a TCP socket liste
 ## Install
 
 ```bash
-pip install pymol-agent-bridge
+uv add pymol-agent-bridge # (or pip install)
 pymol-agent-bridge setup
 ```
 
