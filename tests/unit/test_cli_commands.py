@@ -3,10 +3,7 @@
 import json
 import sys
 
-import pytest
-
 from pymol_agent_bridge import cli
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -114,7 +111,10 @@ class TestDoRunCode:
     def test_exec_no_code_returns_error(self, monkeypatch, capsys):
         """No code provided -> error message, returns 1."""
         # Provide a fake stdin with a fileno, then mark it as a TTY.
-        monkeypatch.setattr(sys, "stdin", type("FakeStdin", (), {"fileno": lambda self: 0})())
+        fake_stdin = type(
+            "FakeStdin", (), {"fileno": lambda self: 0}
+        )()
+        monkeypatch.setattr(sys, "stdin", fake_stdin)
         monkeypatch.setattr("os.isatty", lambda _: True)
         args = _make_args(code=None)
         ret = cli.do_run_code(args)
@@ -126,7 +126,15 @@ class TestDoRunCode:
     def test_exec_from_stdin(self, monkeypatch, capsys):
         """When code is None and stdin is not a TTY, reads from stdin."""
         monkeypatch.setattr("os.isatty", lambda _: False)
-        monkeypatch.setattr(sys, "stdin", type("FakeStdin", (), {"read": lambda self: "print('stdin')", "fileno": lambda self: 0})())
+        fake_stdin = type(
+            "FakeStdin",
+            (),
+            {
+                "read": lambda self: "print('stdin')",
+                "fileno": lambda self: 0,
+            },
+        )()
+        monkeypatch.setattr(sys, "stdin", fake_stdin)
         monkeypatch.setattr(
             cli, "PyMOLConnection", lambda: FakeConnection(execute_result="stdin")
         )
@@ -293,8 +301,6 @@ class TestMainDispatch:
         """'run-code' is silently rewritten to 'exec'."""
         monkeypatch.setattr(sys, "argv", ["pymol-agent-bridge", "run-code", "print(1)"])
         called = {"yes": False}
-
-        original_do_run_code = cli.do_run_code
 
         def fake_do_run_code(args):
             called["yes"] = True

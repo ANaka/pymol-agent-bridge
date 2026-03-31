@@ -1,14 +1,12 @@
 """Unit tests for connection.py edge cases not covered by other test files."""
 
 import os
-import socket
 import subprocess
 
 import pytest
 
 from pymol_agent_bridge import connection
 from pymol_agent_bridge.connection import PyMOLConnection
-
 
 # ---------------------------------------------------------------------------
 # is_connected() edge cases
@@ -58,7 +56,7 @@ class TestIsConnected:
         assert conn.socket is None
 
     def test_active_connection_returns_true(self):
-        """Returns True when recv(MSG_PEEK) raises BlockingIOError (no data, still alive)."""
+        """Returns True when recv(MSG_PEEK) raises BlockingIOError."""
         conn = PyMOLConnection()
 
         class AliveSocket:
@@ -90,7 +88,9 @@ class TestLaunchPymol:
 
     def test_headless_passes_c_flag(self, monkeypatch):
         """headless=True includes -c in the command arguments."""
-        monkeypatch.setattr(connection, "find_pymol_command", lambda: ["/usr/bin/pymol"])
+        monkeypatch.setattr(
+            connection, "find_pymol_command", lambda: ["/usr/bin/pymol"]
+        )
         monkeypatch.setattr(connection, "is_plugin_in_pymolrc", lambda: True)
 
         captured_args = {}
@@ -107,7 +107,9 @@ class TestLaunchPymol:
 
     def test_file_path_in_args(self, monkeypatch):
         """file_path is appended to the command arguments."""
-        monkeypatch.setattr(connection, "find_pymol_command", lambda: ["/usr/bin/pymol"])
+        monkeypatch.setattr(
+            connection, "find_pymol_command", lambda: ["/usr/bin/pymol"]
+        )
         monkeypatch.setattr(connection, "is_plugin_in_pymolrc", lambda: True)
 
         captured_args = {}
@@ -123,7 +125,9 @@ class TestLaunchPymol:
 
     def test_plugin_injected_when_not_in_pymolrc(self, monkeypatch):
         """When plugin is not in .pymolrc, -d flag is added to inject it."""
-        monkeypatch.setattr(connection, "find_pymol_command", lambda: ["/usr/bin/pymol"])
+        monkeypatch.setattr(
+            connection, "find_pymol_command", lambda: ["/usr/bin/pymol"]
+        )
         monkeypatch.setattr(connection, "is_plugin_in_pymolrc", lambda: False)
 
         captured_args = {}
